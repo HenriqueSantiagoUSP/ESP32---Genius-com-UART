@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "ESP-IDF",
+            "compileCommands": "${config:idf.buildPath}/compile_commands.json",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:IDF_PATH}/components/**"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${env:IDF_PATH}/components",
+                    "${env:IDF_PATH}/components/freertos/FreeRTOS-Kernel/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ],
+    "version": 4
+}
