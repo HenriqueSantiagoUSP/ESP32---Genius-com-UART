@@ -1,76 +1,121 @@
 | Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-H4 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
 | ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- | -------- |
 
-# UART Echo Example
+# Genius (Simon) na ESP32 com UART
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+Implementação do clássico jogo de memória **Genius** (Simon) em uma ESP32 usando ESP-IDF.
+A ESP32 acende uma sequência de LEDs coloridos e o jogador precisa repetir essa sequência
+digitando os números correspondentes no monitor serial (UART). A cada acerto, a sequência
+cresce em um passo; ao errar, o jogo acaba e reinicia.
 
-This example demonstrates how to utilize UART interfaces by echoing back to the sender any data received on
-configured UART.
+## Funcionamento
 
-## How to use example
+1. A cada nível, o jogo sorteia uma nova cor e a adiciona ao final da sequência.
+2. A sequência completa é exibida piscando os LEDs (mensagem `Observe a sequencia...`).
+3. O jogador repete a sequência digitando `1`, `2`, `3` ou `4` no terminal serial.
+   Cada tecla acende o LED correspondente como feedback visual.
+4. **O erro é acusado imediatamente**: assim que o jogador digita uma cor que não bate com
+   a sequência, o jogo encerra a rodada (`*** ERRADO! Game Over! ***`) sem esperar o resto
+   dos dígitos, reproduz uma animação de game over e reinicia do nível 1.
+5. Se a sequência for repetida corretamente até o fim, avança para o próximo nível.
+6. Ao completar `MAX_SEQUENCE` (20) níveis, o jogador vence (`*** PARABENS! ***`).
 
-### Hardware Required
+### Limite de tempo da resposta
 
-The example can be run on any development board, that is based on the Espressif SoC. The board shall be connected to a computer with a single USB cable for flashing and monitoring. The external interface should have 3.3V outputs. You may
-use e.g. 3.3V compatible USB-to-Serial dongle.
+O jogador tem um tempo máximo para repetir a sequência **inteira**. Se esse tempo estourar
+antes de a sequência ser concluída, o jogo encerra a rodada por tempo esgotado
+(`*** TEMPO ESGOTADO! Game Over! ***`) e reinicia do nível 1.
 
-### Setup the Hardware
+O limite é definido pela macro `RESPONSE_TIMEOUT_MS` (em milissegundos) no topo de
+`main/uart.c`. O valor padrão é `10000` (10 s). O tempo restante é informado ao jogador na
+mensagem `Sua vez! Repita a sequencia (em ate N s):`.
 
-Connect the external serial interface to the board as follows.
-
-```
-  -----------------------------------------------------------------------------------------
-  | Target chip Interface | Kconfig Option     | Default ESP Pin      | External UART Pin |
-  | ----------------------|--------------------|----------------------|--------------------
-  | Transmit Data (TxD)   | EXAMPLE_UART_TXD   | GPIO4                | RxD               |
-  | Receive Data (RxD)    | EXAMPLE_UART_RXD   | GPIO5                | TxD               |
-  | Ground                | n/a                | GND                  | GND               |
-  -----------------------------------------------------------------------------------------
-```
-Note: Some GPIOs can not be used with certain chips because they are reserved for internal use. Please refer to UART documentation for selected target.
-
-Optionally, you can set-up and use a serial interface that has RTS and CTS signals in order to verify that the
-hardware control flow works. Connect the extra signals according to the following table, configure both extra pins in
-the example code `uart_echo_example_main.c` by replacing existing `UART_PIN_NO_CHANGE` macros with the appropriate pin
-numbers and configure UART1 driver to use the hardware flow control by setting `.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS`
-and adding `.rx_flow_ctrl_thresh = 122` to the `uart_config` structure.
-
-```
-  ---------------------------------------------------------------
-  | Target chip Interface | Macro           | External UART Pin |
-  | ----------------------|-----------------|--------------------
-  | Transmit Data (TxD)   | ECHO_TEST_RTS   | CTS               |
-  | Receive Data (RxD)    | ECHO_TEST_CTS   | RTS               |
-  | Ground                | n/a             | GND               |
-  ---------------------------------------------------------------
+```c
+#define RESPONSE_TIMEOUT_MS  10000   // 10 segundos para responder
 ```
 
-### Configure the project
+### Mapeamento das cores
 
-Use the command below to configure project using Kconfig menu as showed in the table above.
-The default Kconfig values can be changed such as: EXAMPLE_TASK_STACK_SIZE, EXAMPLE_UART_BAUD_RATE, EXAMPLE_UART_PORT_NUM (Refer to Kconfig file).
-```
-idf.py menuconfig
-```
+| Tecla | Cor      | GPIO  |
+| ----- | -------- | ----- |
+| `1`   | Azul     | GPIO4 |
+| `2`   | Verde    | GPIO5 |
+| `3`   | Vermelho | GPIO6 |
+| `4`   | Amarelo  | GPIO7 |
 
-### Build and Flash
+## Arquitetura do código
 
-Build the project and flash it to the board, then run monitor tool to view serial output:
+O projeto (`main/uart.c`) usa duas tasks do FreeRTOS coordenadas por semáforos:
+
+- **`game_task`** — controla o fluxo do jogo: sorteia a sequência, exibe os LEDs, imprime
+  as mensagens e decide acerto/erro/vitória a cada nível.
+- **`uart_rx_task`** — é a **única** dona da leitura da UART. Lê as teclas, dá o feedback
+  visual e compara cada dígito com a sequência em tempo real, sinalizando o resultado para
+  a `game_task`.
+
+Mecanismos de sincronização:
+
+- `input_done_sem` — binário; sinaliza à `game_task` que a vez do jogador terminou (por
+  acerto completo ou por erro).
+- `uart_mutex` — serializa as escritas na UART para que mensagens de tasks diferentes não
+  se misturem.
+- Flags voláteis: `input_allowed` (libera/bloqueia a leitura de teclas), `start_input`
+  (`game_task` pede à `uart_rx_task` que limpe o buffer e libere o input) e `input_error`
+  (indica que o jogador errou).
+
+> **Observação:** o `uart_flush_input()` é chamado dentro da `uart_rx_task`, e não na
+> `game_task`. Como as duas tasks dividem a mesma UART, chamar o flush de uma task enquanto
+> a outra está em `uart_read_bytes()` disputa o mutex interno de RX do driver e trava o
+> jogo. Centralizar toda a leitura/flush em uma só task evita esse impasse.
+
+## Hardware necessário
+
+- Uma placa de desenvolvimento baseada em ESP32.
+- 4 LEDs (azul, verde, vermelho, amarelo) com seus resistores limitadores (ex.: 220–330 Ω),
+  conectados aos GPIOs 4, 5, 6 e 7, com o terminal negativo no GND.
+- Cabo USB para gravação e monitoramento serial.
+
+## Como compilar e gravar
+
+Com o ESP-IDF instalado e o ambiente configurado:
 
 ```
 idf.py -p PORT flash monitor
 ```
 
-(To exit the serial monitor, type ``Ctrl-]``.)
+(Para sair do monitor serial, tecle `Ctrl-]`.)
 
-See the Getting Started Guide for full steps to configure and use ESP-IDF to build projects.
+A UART usada é a `UART_NUM_0` (a mesma do monitor), a 115200 bauds.
 
-## Example Output
+## Exemplo de saída
 
-Type some characters in the terminal connected to the external serial interface. As result you should see echo in the same terminal which you used for typing the characters. You can verify if the echo indeed comes from ESP board by
-disconnecting either `TxD` or `RxD` pin: no characters will appear when typing.
+```
+=== GENIUS ESP32 ===
+1=Azul  2=Verde  3=Vermelho  4=Amarelo
 
-## Troubleshooting
+--- Nivel 1 ---
+Observe a sequencia...
+Sua vez! Repita a sequencia:
+[1/1] Vermelho
+Correto! Proximo nivel...
 
-You are not supposed to see the echo in the terminal which is used for flashing and monitoring, but in the other UART configured through Kconfig can be used.
+--- Nivel 2 ---
+Observe a sequencia...
+Sua vez! Repita a sequencia:
+[1/2] Azul
+[2/2] Verde
+Correto! Proximo nivel...
+```
+
+Caso o jogador erre uma cor no meio da sequência:
+
+```
+--- Nivel 3 ---
+Observe a sequencia...
+Sua vez! Repita a sequencia:
+[1/3] Azul
+[2/3] Amarelo
+
+*** ERRADO! Game Over! ***
+Reiniciando...
+```

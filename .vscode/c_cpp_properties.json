@@ -1,20 +1,26 @@
 {
     "configurations": [
         {
-            "name": "ESP-IDF",
-            "compileCommands": "${config:idf.buildPath}/compile_commands.json",
+            "name": "ESP32-S3",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${env:IDF_PATH}/components/**"
+                "${workspaceFolder}/build/config",
+                "C:/esp/v6.0.1/esp-idf/components/**",
+                "C:/esp/v6.0.1/esp-idf/components/freertos/FreeRTOS-Kernel/include",
+                "C:/esp/v6.0.1/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/include",
+                "C:/esp/v6.0.1/esp-idf/components/freertos/config/include",
+                "C:/esp/v6.0.1/esp-idf/components/freertos/config/xtensa/include",
+                "C:/esp/v6.0.1/esp-idf/components/freertos/esp_additions/include"
             ],
-            "browse": {
-                "path": [
-                    "${workspaceFolder}",
-                    "${env:IDF_PATH}/components",
-                    "${env:IDF_PATH}/components/freertos/FreeRTOS-Kernel/include"
-                ],
-                "limitSymbolsToIncludedHeaders": true
-            }
+            "defines": [
+                "ESP_PLATFORM",
+                "IDF_VER=\"v6.0.1\""
+            ],
+            "compilerPath": "C:/Users/henri/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x86",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
         }
     ],
     "version": 4
