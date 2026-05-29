@@ -22,12 +22,13 @@ cresce em um passo; ao errar, o jogo acaba e reinicia.
 
 ### Limite de tempo da resposta
 
-O jogador tem um tempo máximo para repetir a sequência **inteira**. Se esse tempo estourar
-antes de a sequência ser concluída, o jogo encerra a rodada por tempo esgotado
-(`*** TEMPO ESGOTADO! Game Over! ***`) e reinicia do nível 1.
+O jogador tem um tempo máximo de **inatividade** entre uma tecla e outra. A contagem é
+**reiniciada a cada tecla digitada**, então o jogo só encerra por tempo esgotado
+(`*** TEMPO ESGOTADO! Game Over! ***`) se o jogador ficar parado, sem apertar nenhuma tecla,
+por mais que o limite — nunca no meio de uma digitação em andamento.
 
 O limite é definido pela macro `RESPONSE_TIMEOUT_MS` (em milissegundos) no topo de
-`main/uart.c`. O valor padrão é `10000` (10 s). O tempo restante é informado ao jogador na
+`main/uart.c`. O valor padrão é `10000` (10 s). O limite é informado ao jogador na
 mensagem `Sua vez! Repita a sequencia (em ate N s):`.
 
 ```c

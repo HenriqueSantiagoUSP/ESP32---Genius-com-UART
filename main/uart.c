@@ -122,8 +122,20 @@ static void game_task(void *arg) {
         // e travaria o jogo.
         start_input = true;
 
-        // Aguarda o jogador terminar de digitar OU o tempo limite estourar
-        bool responded = (xSemaphoreTake(input_done_sem, pdMS_TO_TICKS(RESPONSE_TIMEOUT_MS)) == pdTRUE);
+        // Aguarda o jogador digitar. O tempo limite e reiniciado a cada tecla
+        // (timeout de inatividade): so ocorre game over por tempo se o jogador
+        // ficar RESPONSE_TIMEOUT_MS sem apertar nenhuma tecla.
+        bool responded = false;
+        while (xSemaphoreTake(input_done_sem, pdMS_TO_TICKS(RESPONSE_TIMEOUT_MS)) == pdTRUE) {
+            // Acordou por uma tecla aceita. Se a vez terminou (erro ou sequencia
+            // completa), o uart_rx_task ja bloqueou novos inputs.
+            if (input_error || !input_allowed) {
+                responded = true;
+                break;
+            }
+            // Caso contrario foi uma tecla intermediaria: volta a esperar com o
+            // tempo reiniciado.
+        }
         input_allowed = false;
 
         if (!responded) {
@@ -187,17 +199,15 @@ static void uart_rx_task(void *arg) {
         if ((uint8_t)idx != sequence[user_pos]) {
             input_error   = true;
             input_allowed = false;
-            xSemaphoreGive(input_done_sem);
-            continue;
-        }
-
-        user_pos++;
-
-        // Sequencia repetida corretamente ate o fim: sinaliza sucesso
-        if (user_pos >= current_level) {
+        } else if (++user_pos >= current_level) {
+            // Sequencia repetida corretamente ate o fim
             input_allowed = false;
-            xSemaphoreGive(input_done_sem);
         }
+
+        // Sinaliza a game_task a cada tecla aceita. Ela usa esse sinal tanto para
+        // detectar fim/erro quanto para reiniciar a contagem do tempo de inatividade,
+        // evitando o timeout enquanto o jogador ainda esta digitando a sequencia.
+        xSemaphoreGive(input_done_sem);
     }
 }
 
